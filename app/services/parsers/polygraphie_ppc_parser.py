@@ -48,47 +48,86 @@ class PolygraphiePPCParser(BaseParser):
         data = {}
 
         # 1. Patient Info
-        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
-        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
-        match_dob = re.search(r"(n[é|e]\s+le|date\s+de\s+naissance)\s*:\s*([\d/]+)", text, re.IGNORECASE)
-        
-        data["patient_nom"] = match_nom.group(1).strip() if match_nom else None
-        data["patient_prenom"] = match_prenom.group(1).strip() if match_prenom else None
-        data["patient_dob"] = match_dob.group(2).strip() if match_dob else None
+        # Try to find footer pattern first: "[Nom], [Prénom] Enregistrement du [Date]"
+        match_footer = re.search(r"([A-Za-zÀ-ÿ \t-]+?),\s*([A-Za-zÀ-ÿ \t-]+?)\s+Enregistrement\s+du", text, re.IGNORECASE)
+        if match_footer:
+            data["patient_nom"] = match_footer.group(1).strip()
+            data["patient_prenom"] = match_footer.group(2).strip()
+        else:
+            match_nom = re.search(r"nom\s*:?\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:id|sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids|genre|n[ée]|nais)\b|$)", text, re.IGNORECASE)
+            match_prenom = re.search(r"pr[é|e]nom\s*:?\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:id|sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids|genre|n[ée]|nais)\b|$)", text, re.IGNORECASE)
+            
+            full_name = match_nom.group(1).strip() if match_nom and match_nom.group(1) else None
+            prenom_val = match_prenom.group(1).strip() if match_prenom and match_prenom.group(1) else None
+            
+            if prenom_val:
+                data["patient_prenom"] = prenom_val
+                data["patient_nom"] = full_name
+            elif full_name:
+                if "," in full_name:
+                    parts = full_name.split(",")
+                    data["patient_nom"] = parts[0].strip()
+                    data["patient_prenom"] = parts[1].strip()
+                else:
+                    parts = full_name.split()
+                    if len(parts) >= 2:
+                        # If one word is in ALL CAPS and the other is not, the ALL CAPS one is the Nom
+                        caps_words = [w for w in parts if w.isupper() and len(w) > 1]
+                        if len(caps_words) == 1:
+                            data["patient_nom"] = caps_words[0]
+                            data["patient_prenom"] = " ".join([w for w in parts if w != caps_words[0]])
+                        else:
+                            # Default to: first word is prenom, last word is nom
+                            data["patient_prenom"] = parts[0]
+                            data["patient_nom"] = " ".join(parts[1:])
+                    else:
+                        data["patient_nom"] = full_name
+                        data["patient_prenom"] = None
+            else:
+                data["patient_nom"] = None
+                data["patient_prenom"] = None
 
-        data["taille"] = self.safe_float(re.search(r"taille\s*:\s*([\d,.]+)\s*(cm|m)", text, re.IGNORECASE))
-        data["poids"] = self.safe_float(re.search(r"poids\s*:\s*([\d,.]+)\s*kg", text, re.IGNORECASE))
-        data["imc"] = self.safe_float(re.search(r"imc\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        # DOB extraction
+        match_dob = re.search(r"(n[é|e]\s+le|date\s+de\s+naissance)\s*:?\s*([\d/]+)", text, re.IGNORECASE)
+        if match_dob:
+            data["patient_dob"] = match_dob.group(2).strip()
+        else:
+            match_age_dob = re.search(r"[âa]ge\s*:?\s*([\d/]{8,10})", text, re.IGNORECASE)
+            data["patient_dob"] = match_age_dob.group(1).strip() if match_age_dob else None
+
+        data["taille"] = self.safe_float(re.search(r"taille\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["poids"] = self.safe_float(re.search(r"poids\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["imc"] = self.safe_float(re.search(r"imc\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
 
         if data["taille"] and data["taille"] > 3.0:
             data["taille"] = data["taille"] / 100.0
 
         # 2. Recording Info
-        match_date = re.search(r"date\s+enregistrement\s*:\s*([\d/-]+)", text, re.IGNORECASE)
-        data["date_enregistrement"] = match_date.group(1).strip() if match_date else None
+        match_date = re.search(r"date\s*(?:de\s+)?l?[’']?\s*enregistrement\s*:?\s*([\d/-]+)", text, re.IGNORECASE)
+        data["date_enregistrement"] = match_date.group(1).strip() if match_date and match_date.group(1) else None
 
         # 3. Respiratory Indices (Residual)
-        data["iah_residuel"] = self.safe_float(re.search(r"iah\s*(r[é|e]siduel)?\s*:\s*([\d,.]+)|index\s+apn[é|e]es\s+hypopn[é|e]es\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["ido"] = self.safe_float(re.search(r"ido\s*:\s*([\d,.]+)|index\s+de\s+d[é|e]saturations?\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["iah_dorsal"] = self.safe_float(re.search(r"iah\s+dorsal\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["iah_non_dorsal"] = self.safe_float(re.search(r"iah\s+non\s*[-|\s]*dorsal\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        data["iah_residuel"] = self.safe_float(re.search(r"iah\s*(?:r[é|e]siduel)?\s*:?\s*([\d,.]+)|index\s+apn[é|e]es\s+hypopn[é|e]es\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["ido"] = self.safe_float(re.search(r"\bido\b\s*:?\s*([\d,.]+)|index\s+de\s+d[é|e]saturations?\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["iah_dorsal"] = self.safe_float(re.search(r"iah\s+dorsal\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["iah_non_dorsal"] = self.safe_float(re.search(r"iah\s+non\s*[-|\s]*dorsal\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
 
-        data["apnees_obstructives_nb"] = self.safe_int(re.search(r"apn[é|e]es\s+obstructives\s*:\s*(\d+)", text, re.IGNORECASE))
-        data["apnees_centrales_nb"] = self.safe_int(re.search(r"apn[é|e]es\s+centrales\s*:\s*(\d+)", text, re.IGNORECASE))
-        data["hypopnees_nb"] = self.safe_int(re.search(r"hypopn[é|e]es\s*:\s*(\d+)", text, re.IGNORECASE))
+        data["apnees_obstructives_nb"] = self.safe_int(re.search(r"apn[é|e]es\s+obstructives\s*:?\s*(\d+)", text, re.IGNORECASE))
+        data["apnees_centrales_nb"] = self.safe_int(re.search(r"apn[é|e]es\s+centrales\s*:?\s*(\d+)", text, re.IGNORECASE))
+        data["hypopnees_nb"] = self.safe_int(re.search(r"hypopn[é|e]es\s*:?\s*(\d+)", text, re.IGNORECASE))
 
         # SpO2
-        data["spo2_moyenne"] = self.safe_float(re.search(r"spo2\s+moyenne\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["spo2_minimale"] = self.safe_float(re.search(r"spo2\s+minimale\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["duree_spo2_sous_90_pct"] = self.safe_float(re.search(r"dur[é|e]e\s+spo2\s*<\s*90\s*%\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        data["spo2_moyenne"] = self.safe_float(re.search(r"spo2\s+moyenne\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["spo2_minimale"] = self.safe_float(re.search(r"spo2\s+(?:minimale|la\s+plus\s+faible)\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["duree_spo2_sous_90_pct"] = self.safe_float(re.search(r"dur[é|e]e\s+spo2\s*<\s*90\s*%\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
 
         # Pressures
-        data["pression_mediane"] = self.safe_float(re.search(r"pression\s+m[é|e]diane\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["pression_moyenne"] = self.safe_float(re.search(r"pression\s+moyenne\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["pression_p95"] = self.safe_float(re.search(r"pression\s+(p95|95e\s+percentile)\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        data["pression_mediane"] = self.safe_float(re.search(r"pression\s+m[é|e]diane\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["pression_moyenne"] = self.safe_float(re.search(r"pression\s+moyenne\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["pression_p95"] = self.safe_float(re.search(r"pression\s+(?:au\s+)?(?:p95|95e\s+percentile|95e\s+centile|95ème\s+centile|95ème\s+percentile)\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
 
         # Sleep/Recording efficiency
-        data["efficacite_sommeil_pct"] = self.safe_float(re.search(r"efficacit[é|e]\s+(du\s+)?sommeil\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        data["efficacite_sommeil_pct"] = self.safe_float(re.search(r"efficacit[é|e]\s+(?:du\s+)?sommeil\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
 
         # Severity residuelle
         if data["iah_residuel"] is not None:
@@ -103,8 +142,8 @@ class PolygraphiePPCParser(BaseParser):
         else:
             data["severite_residuelle"] = "Normal"
 
-        match_conclusion = re.search(r"conclusion\s*:\s*(.*)", text, re.IGNORECASE | re.DOTALL)
-        data["conclusion_texte"] = match_conclusion.group(1).strip() if match_conclusion else None
+        match_conclusion = re.search(r"conclusion\s*:?\s*(.*)", text, re.IGNORECASE | re.DOTALL)
+        data["conclusion_texte"] = match_conclusion.group(1).strip() if match_conclusion and match_conclusion.group(1) else None
 
         record = PolygraphiePPC(
             pdf_file_id=self.pdf_file_id,

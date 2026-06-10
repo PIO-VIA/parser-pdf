@@ -50,27 +50,35 @@ class EFRStandardParser(BaseParser):
 
         # 1. Patient info
         # 1. Patient info with lookahead to prevent adjacent labels collision
-        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids)\b|$)", text, re.IGNORECASE)
-        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids)\b|$)", text, re.IGNORECASE)
-        match_dob = re.search(r"(n[é|e]\s+le|date\s+de\s+naissance)\s*:\s*([\d/]+)", text, re.IGNORECASE)
-        match_genre = re.search(r"(?:genre|sexe)\s*:\s*([FfMm])", text, re.IGNORECASE)
+        match_nom = re.search(r"nom\s*:?\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids|genre|id|technicien)\b|$)", text, re.IGNORECASE)
+        match_prenom = re.search(r"pr[é|e]nom\s*:?\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids|genre|id|technicien)\b|$)", text, re.IGNORECASE)
+        match_dob = re.search(r"(n[é|e]\s+le|date\s+de\s+naissance)\s*:?\s*([\d/]+)", text, re.IGNORECASE)
+        match_genre = re.search(r"(?:genre|sexe)\s*:?\s*([FfMmHh])", text, re.IGNORECASE)
         
-        data["patient_nom"] = match_nom.group(1).strip() if match_nom else None
-        data["patient_prenom"] = match_prenom.group(1).strip() if match_prenom else None
-        data["patient_dob"] = match_dob.group(2).strip() if match_dob else None
-        data["genre"] = match_genre.group(1).strip().upper() if match_genre and match_genre.group(1) else None
+        data["patient_nom"] = match_nom.group(1).strip() if match_nom and match_nom.group(1) else None
+        data["patient_prenom"] = match_prenom.group(1).strip() if match_prenom and match_prenom.group(1) else None
+        data["patient_dob"] = match_dob.group(2).strip() if match_dob and match_dob.group(2) else None
+        
+        genre_val = match_genre.group(1).strip().upper() if match_genre and match_genre.group(1) else None
+        if genre_val:
+            if genre_val in ("M", "H"):
+                data["genre"] = "M"
+            elif genre_val == "F":
+                data["genre"] = "F"
+        else:
+            data["genre"] = None
 
-        data["taille"] = self.safe_float(re.search(r"taille(?:\(cm\))?\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["poids"] = self.safe_float(re.search(r"poids(?:\(kg\))?\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["imc"] = self.safe_float(re.search(r"imc\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        data["taille"] = self.safe_float(re.search(r"taille(?:\(cm\))?\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["poids"] = self.safe_float(re.search(r"poids(?:\(kg\))?\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
+        data["imc"] = self.safe_float(re.search(r"imc\s*:?\s*([\d,.]+)", text, re.IGNORECASE))
 
         if data["taille"] and data["taille"] > 3.0:
             data["taille"] = data["taille"] / 100.0
 
         # Exam info
-        match_date = re.search(r"date\s+(examen|visite)\s*:\s*([\d/-]+)", text, re.IGNORECASE)
-        if match_date:
-            data["date_examen"] = match_date.group(2).strip()
+        match_date = re.search(r"date\s+(?:examen|visite)\s*:?\s*([\d/-]+)", text, re.IGNORECASE)
+        if match_date and match_date.group(1):
+            data["date_examen"] = match_date.group(1).strip()
         else:
             # Fallback to finding any DD/MM/YYYY date that is NOT the patient's DOB
             all_dates = re.findall(r"\b\d{2}/\d{2}/\d{4}\b", text)
@@ -81,21 +89,21 @@ class EFRStandardParser(BaseParser):
                     break
 
         match_dr = re.search(r"(?:dr|docteur)\s+([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids|clinique)\b|$)", text, re.IGNORECASE)
-        data["medecin"] = match_dr.group(1).strip() if match_dr else None
+        data["medecin"] = match_dr.group(1).strip() if match_dr and match_dr.group(1) else None
         
         match_clinique = re.search(r"(?:clinique|polyclinique)\s+([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
-        data["clinique"] = match_clinique.group(1).strip() if match_clinique else None
+        data["clinique"] = match_clinique.group(1).strip() if match_clinique and match_clinique.group(1) else None
 
-        match_tabac = re.search(r"tabagisme|tabac\s*:\s*([A-Za-zÀ-ÿ \t\d-]+)", text, re.IGNORECASE)
-        data["tabagisme"] = match_tabac.group(1).strip() if match_tabac else None
+        match_tabac = re.search(r"(?:tabagisme|tabac)\s*:?\s*([A-Za-zÀ-ÿ \t\d-]+)", text, re.IGNORECASE)
+        data["tabagisme"] = match_tabac.group(1).strip() if match_tabac and match_tabac.group(1) else None
 
         # Traitement
-        match_traitement = re.search(r"traitement\s*:\s*([A-Za-zÀ-ÿ \t\d-]+)", text, re.IGNORECASE)
-        data["traitement_utilise"] = match_traitement.group(1).strip() if match_traitement else None
+        match_traitement = re.search(r"traitement\s*:?\s*([A-Za-zÀ-ÿ \t\d-]+)", text, re.IGNORECASE)
+        data["traitement_utilise"] = match_traitement.group(1).strip() if match_traitement and match_traitement.group(1) else None
 
         # Interpretation
-        match_interp = re.search(r"interpr[é|e]tation\s*:\s*(.*)", text, re.IGNORECASE | re.DOTALL)
-        data["interpretation_texte"] = match_interp.group(1).strip() if match_interp else None
+        match_interp = re.search(r"interpr[é|e]tation\s*:?\s*(.*)", text, re.IGNORECASE | re.DOTALL)
+        data["interpretation_texte"] = match_interp.group(1).strip() if match_interp and match_interp.group(1) else None
 
         # Table values extraction
         row_mappings = {
