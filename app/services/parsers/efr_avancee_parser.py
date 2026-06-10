@@ -49,8 +49,9 @@ class EFRAvanceeParser(BaseParser):
         data = {}
 
         # 1. Patient info
-        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
-        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
+        # 1. Patient info with lookahead to prevent adjacent labels collision
+        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids)\b|$)", text, re.IGNORECASE)
+        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids)\b|$)", text, re.IGNORECASE)
         match_dob = re.search(r"(n[é|e]\s+le|date\s+de\s+naissance)\s*:\s*([\d/]+)", text, re.IGNORECASE)
         match_genre = re.search(r"(?:genre|sexe)\s*:\s*([FfMm])", text, re.IGNORECASE)
         
@@ -59,8 +60,8 @@ class EFRAvanceeParser(BaseParser):
         data["patient_dob"] = match_dob.group(2).strip() if match_dob else None
         data["genre"] = match_genre.group(1).strip().upper() if match_genre and match_genre.group(1) else None
 
-        data["taille"] = self.safe_float(re.search(r"taille\s*:\s*([\d,.]+)\s*(cm|m)", text, re.IGNORECASE))
-        data["poids"] = self.safe_float(re.search(r"poids\s*:\s*([\d,.]+)\s*kg", text, re.IGNORECASE))
+        data["taille"] = self.safe_float(re.search(r"taille(?:\(cm\))?\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        data["poids"] = self.safe_float(re.search(r"poids(?:\(kg\))?\s*:\s*([\d,.]+)", text, re.IGNORECASE))
         data["imc"] = self.safe_float(re.search(r"imc\s*:\s*([\d,.]+)", text, re.IGNORECASE))
 
         if data["taille"] and data["taille"] > 3.0:
@@ -68,12 +69,21 @@ class EFRAvanceeParser(BaseParser):
 
         # Exam info
         match_date = re.search(r"date\s+(examen|visite)\s*:\s*([\d/-]+)", text, re.IGNORECASE)
-        data["date_examen"] = match_date.group(2).strip() if match_date else None
+        if match_date:
+            data["date_examen"] = match_date.group(2).strip()
+        else:
+            # Fallback to finding any DD/MM/YYYY date that is NOT the patient's DOB
+            all_dates = re.findall(r"\b\d{2}/\d{2}/\d{4}\b", text)
+            dob = data.get("patient_dob")
+            for d in all_dates:
+                if d != dob:
+                    data["date_examen"] = d
+                    break
 
-        match_dr = re.search(r"(dr|docteur)\s+([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
-        data["medecin"] = match_dr.group(2).strip() if match_dr else None
+        match_dr = re.search(r"(?:dr|docteur)\s+([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids|clinique)\b|$)", text, re.IGNORECASE)
+        data["medecin"] = match_dr.group(1).strip() if match_dr else None
         
-        match_clinique = re.search(r"clinique\s+([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
+        match_clinique = re.search(r"(?:clinique|polyclinique)\s+([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
         data["clinique"] = match_clinique.group(1).strip() if match_clinique else None
 
         # Interpretation
@@ -84,6 +94,7 @@ class EFRAvanceeParser(BaseParser):
         row_mappings = {
             "cv lente": "cv_lente",
             "cvl": "cv_lente",
+            "cv": "cv_lente",
             "vt": "vt",
             "vre": "vre",
             "ci": "ci",
@@ -93,11 +104,18 @@ class EFRAvanceeParser(BaseParser):
             "sraw": "sraw",
             "raw": "raw",
             "vgt raw": "vgt_raw",
+            "vgt (raw)": "vgt_raw",
             "vgt pleth": "vgt_plethysmo",
+            "vgt": "vgt_plethysmo",
             "cpt pleth": "cpt_plethysmo",
+            "cpt": "cpt_plethysmo",
             "vr pleth": "vr_plethysmo",
+            "vr": "vr_plethysmo",
             "cv/cpt": "cv_cpt",
+            "cv (cpt)": "cv_cpt",
             "vre/cpt": "vre_cpt",
+            "vre (cpt)": "vre_cpt",
+            "vre(cpt)": "vre_cpt",
             "cvf": "cvf",
             "vems": "vems",
             "vems/cvf": "vems_cvf_pct",
@@ -126,73 +144,34 @@ class EFRAvanceeParser(BaseParser):
             for row in table:
                 if not row or not row[0]:
                     continue
+                # Normalize label
                 label = str(row[0]).lower().strip()
+                label = label.replace("{", "(").replace("}", ")").replace("[", "(").replace("]", ")")
+                # Remove unit suffixes in parentheses
+                label = re.sub(
+                    r"\((?:l|l/s|%|ml/mmhg/min|ml/mmhg/mi|dlco/l|cmh2o/l/s|1/s\*cmh2o|l/s\*cmh2o|cmh2o\*s|kg|cm|m)\)", 
+                    "", 
+                    label, 
+                    flags=re.IGNORECASE
+                ).strip()
+                # Clean leading non-alphanumeric chars
+                label = re.sub(r"^[^a-z0-9]+", "", label)
+                
                 matched_key = None
                 for k in sorted(row_mappings.keys(), key=len, reverse=True):
-                    if k in label:
+                    if label.startswith(k):
                         matched_key = row_mappings[k]
                         break
                 
                 if matched_key:
                     nums = extract_nums(row)
                     if len(nums) >= 2:
-                        val = nums[1] # Pre/actual value
-                        if matched_key == "cv_lente":
-                            data["cv_lente"] = val
-                        elif matched_key == "vt":
-                            data["vt"] = val
-                        elif matched_key == "vre":
-                            data["vre"] = val
-                        elif matched_key == "ci":
-                            data["ci"] = val
-                        elif matched_key == "ce":
-                            data["ce"] = val
-                        elif matched_key == "sgaw":
-                            data["sgaw"] = val
-                        elif matched_key == "gaw":
-                            data["gaw"] = val
-                        elif matched_key == "sraw":
-                            data["sraw"] = val
-                        elif matched_key == "raw":
-                            data["raw"] = val
-                        elif matched_key == "vgt_raw":
-                            data["vgt_raw"] = val
-                        elif matched_key == "vgt_plethysmo":
-                            data["vgt_plethysmo"] = val
-                        elif matched_key == "cpt_plethysmo":
-                            data["cpt_plethysmo"] = val
-                        elif matched_key == "vr_plethysmo":
-                            data["vr_plethysmo"] = val
-                        elif matched_key == "cv_cpt":
-                            data["cv_cpt"] = val
-                        elif matched_key == "vre_cpt":
-                            data["vre_cpt"] = val
-                        elif matched_key == "cvf":
-                            data["cvf"] = val
-                        elif matched_key == "vems":
-                            data["vems"] = val
-                        elif matched_key == "vems_cvf_pct":
-                            data["vems_cvf_pct"] = val
-                        elif matched_key == "dep":
-                            data["dep"] = val
-                        elif matched_key == "dem":
-                            data["dem"] = val
-                        elif matched_key == "dlco":
-                            data["dlco"] = val
-                            if len(nums) > 2:
-                                data["dlco_pct"] = nums[2]
-                        elif matched_key == "dlco_pct":
-                            data["dlco_pct"] = val
-                        elif matched_key == "kco":
-                            data["kco"] = val
-                            if len(nums) > 2:
-                                data["kco_pct"] = nums[2]
-                        elif matched_key == "kco_pct":
-                            data["kco_pct"] = val
-                        elif matched_key == "vi":
-                            data["vi"] = val
-                        elif matched_key == "va":
-                            data["va"] = val
+                        val = nums[1]
+                        data[matched_key] = val
+                        if matched_key == "dlco" and len(nums) > 2:
+                            data["dlco_pct"] = nums[2]
+                        elif matched_key == "kco" and len(nums) > 2:
+                            data["kco_pct"] = nums[2]
 
         record = EFRAvancee(
             pdf_file_id=self.pdf_file_id,

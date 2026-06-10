@@ -49,8 +49,9 @@ class EFRStandardParser(BaseParser):
         data = {}
 
         # 1. Patient info
-        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
-        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
+        # 1. Patient info with lookahead to prevent adjacent labels collision
+        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids)\b|$)", text, re.IGNORECASE)
+        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids)\b|$)", text, re.IGNORECASE)
         match_dob = re.search(r"(n[é|e]\s+le|date\s+de\s+naissance)\s*:\s*([\d/]+)", text, re.IGNORECASE)
         match_genre = re.search(r"(?:genre|sexe)\s*:\s*([FfMm])", text, re.IGNORECASE)
         
@@ -59,8 +60,8 @@ class EFRStandardParser(BaseParser):
         data["patient_dob"] = match_dob.group(2).strip() if match_dob else None
         data["genre"] = match_genre.group(1).strip().upper() if match_genre and match_genre.group(1) else None
 
-        data["taille"] = self.safe_float(re.search(r"taille\s*:\s*([\d,.]+)\s*(cm|m)", text, re.IGNORECASE))
-        data["poids"] = self.safe_float(re.search(r"poids\s*:\s*([\d,.]+)\s*kg", text, re.IGNORECASE))
+        data["taille"] = self.safe_float(re.search(r"taille(?:\(cm\))?\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        data["poids"] = self.safe_float(re.search(r"poids(?:\(kg\))?\s*:\s*([\d,.]+)", text, re.IGNORECASE))
         data["imc"] = self.safe_float(re.search(r"imc\s*:\s*([\d,.]+)", text, re.IGNORECASE))
 
         if data["taille"] and data["taille"] > 3.0:
@@ -68,12 +69,21 @@ class EFRStandardParser(BaseParser):
 
         # Exam info
         match_date = re.search(r"date\s+(examen|visite)\s*:\s*([\d/-]+)", text, re.IGNORECASE)
-        data["date_examen"] = match_date.group(2).strip() if match_date else None
+        if match_date:
+            data["date_examen"] = match_date.group(2).strip()
+        else:
+            # Fallback to finding any DD/MM/YYYY date that is NOT the patient's DOB
+            all_dates = re.findall(r"\b\d{2}/\d{2}/\d{4}\b", text)
+            dob = data.get("patient_dob")
+            for d in all_dates:
+                if d != dob:
+                    data["date_examen"] = d
+                    break
 
-        match_dr = re.search(r"(dr|docteur)\s+([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
-        data["medecin"] = match_dr.group(2).strip() if match_dr else None
+        match_dr = re.search(r"(?:dr|docteur)\s+([A-Za-zÀ-ÿ \t-]+?)(?=\s+(?:sexe|age|nom|pr[ée]nom|num[eé]ro|date|dob|taille|poids|clinique)\b|$)", text, re.IGNORECASE)
+        data["medecin"] = match_dr.group(1).strip() if match_dr else None
         
-        match_clinique = re.search(r"clinique\s+([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
+        match_clinique = re.search(r"(?:clinique|polyclinique)\s+([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
         data["clinique"] = match_clinique.group(1).strip() if match_clinique else None
 
         match_tabac = re.search(r"tabagisme|tabac\s*:\s*([A-Za-zÀ-ÿ \t\d-]+)", text, re.IGNORECASE)
@@ -124,11 +134,23 @@ class EFRStandardParser(BaseParser):
             for row in table:
                 if not row or not row[0]:
                     continue
+                # Normalize label
                 label = str(row[0]).lower().strip()
+                label = label.replace("{", "(").replace("}", ")").replace("[", "(").replace("]", ")")
+                # Remove unit suffixes in parentheses
+                label = re.sub(
+                    r"\((?:l|l/s|%|ml/mmhg/min|ml/mmhg/mi|dlco/l|cmh2o/l/s|1/s\*cmh2o|l/s\*cmh2o|cmh2o\*s|kg|cm|m)\)", 
+                    "", 
+                    label, 
+                    flags=re.IGNORECASE
+                ).strip()
+                # Clean leading non-alphanumeric chars
+                label = re.sub(r"^[^a-z0-9]+", "", label)
+                
                 # Match label
                 matched_key = None
                 for k in sorted(row_mappings.keys(), key=len, reverse=True):
-                    if k in label:
+                    if label.startswith(k):
                         matched_key = row_mappings[k]
                         break
                 

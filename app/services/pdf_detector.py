@@ -17,7 +17,7 @@ def detect_pdf_type(filepath: str) -> PDFType:
             images = convert_from_path(filepath, last_page=2)
             ocr_text = ""
             for img in images:
-                ocr_text += pytesseract.image_to_string(img, lang='fra')
+                ocr_text += pytesseract.image_to_string(img, lang='fra', config='--psm 6')
             text = ocr_text
         except Exception:
             pass
