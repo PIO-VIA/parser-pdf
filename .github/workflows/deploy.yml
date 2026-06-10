@@ -76,15 +76,21 @@ jobs:
               echo "Created .env from .env.example. Please configure production credentials."
             fi
             
-            # Rebuild and restart the containers
-            docker-compose down
-            docker-compose up -d --build
+            # Rebuild and restart the containers using detected command
+            if command -v docker-compose >/dev/null 2>&1; then
+              DOCKER_COMPOSE="docker-compose"
+            else
+              DOCKER_COMPOSE="docker compose"
+            fi
+            
+            $DOCKER_COMPOSE down
+            $DOCKER_COMPOSE up -d --build
             
             # Wait for the API container to start up and be ready
             echo "Waiting for container to be ready..."
             sleep 10
             
             # Run Alembic migrations inside the container
-            docker-compose exec -T api alembic upgrade head
+            $DOCKER_COMPOSE exec -T api alembic upgrade head
             
             echo "Deployment completed successfully!"
