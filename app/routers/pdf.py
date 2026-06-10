@@ -156,3 +156,48 @@ async def list_pdfs(
     except Exception as e:
         logger.error(f"Error listing PDFs: {str(e)}", exc_info=True)
         return error_response(message=f"Erreur interne : {str(e)}", code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@router.post("/reparse/{pdf_file_id}", status_code=status.HTTP_202_ACCEPTED)
+async def reparse_pdf(
+    pdf_file_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Relance le parsing d'un fichier PDF qui a échoué.
+    """
+    try:
+        pdf_file = await db.get(PDFFile, pdf_file_id)
+        if not pdf_file:
+            return error_response(message="PDF introuvable", code=status.HTTP_404_NOT_FOUND)
+            
+        if pdf_file.status != PDFStatus.FAILED:
+            return error_response(
+                message=f"Le PDF n'est pas dans un état en échec (statut actuel : {pdf_file.status.value})",
+                code=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if not pdf_file.temp_path or not os.path.exists(pdf_file.temp_path):
+            return error_response(
+                message="Le fichier temporaire n'est plus disponible sur le disque pour relancer le parsing.",
+                code=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Mettre à jour le statut en PENDING
+        pdf_file.status = PDFStatus.PENDING
+        pdf_file.error_message = None
+        await db.commit()
+        await db.refresh(pdf_file)
+        
+        # Lancer le traitement en arrière-plan
+        background_tasks.add_task(process_pdf, pdf_file.id, pdf_file.temp_path)
+        
+        return success_response(
+            data={"pdf_file_id": pdf_file.id, "status": PDFStatus.PENDING.value},
+            message="Relance du parsing acceptée, traitement en cours",
+            code=status.HTTP_202_ACCEPTED
+        )
+    except Exception as e:
+        logger.error(f"Error during PDF reparse: {str(e)}", exc_info=True)
+        return error_response(message=f"Erreur interne : {str(e)}", code=status.HTTP_500_INTERNAL_SERVER_ERROR)

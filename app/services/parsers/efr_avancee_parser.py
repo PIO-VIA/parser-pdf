@@ -52,12 +52,12 @@ class EFRAvanceeParser(BaseParser):
         match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
         match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
         match_dob = re.search(r"(n[é|e]\s+le|date\s+de\s+naissance)\s*:\s*([\d/]+)", text, re.IGNORECASE)
-        match_genre = re.search(r"genre|sexe\s*:\s*([FfMm])", text, re.IGNORECASE)
+        match_genre = re.search(r"(?:genre|sexe)\s*:\s*([FfMm])", text, re.IGNORECASE)
         
         data["patient_nom"] = match_nom.group(1).strip() if match_nom else None
         data["patient_prenom"] = match_prenom.group(1).strip() if match_prenom else None
         data["patient_dob"] = match_dob.group(2).strip() if match_dob else None
-        data["genre"] = match_genre.group(1).strip().upper() if match_genre else None
+        data["genre"] = match_genre.group(1).strip().upper() if match_genre and match_genre.group(1) else None
 
         data["taille"] = self.safe_float(re.search(r"taille\s*:\s*([\d,.]+)\s*(cm|m)", text, re.IGNORECASE))
         data["poids"] = self.safe_float(re.search(r"poids\s*:\s*([\d,.]+)\s*kg", text, re.IGNORECASE))

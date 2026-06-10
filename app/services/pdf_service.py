@@ -18,10 +18,11 @@ async def process_pdf(pdf_file_id: int, filepath: str):
     2. Détecter le type de PDF
     3. Parser et sauvegarder en base
     4. Passer au statut DONE et mettre à jour parsed_at et temp_path
-    5. Supprimer le fichier temporaire (dans tous les cas)
+    5. Supprimer le fichier temporaire (seulement en cas de succès)
     """
     async with SessionLocal() as db:
         pdf_record = None
+        success = False
         try:
             pdf_record = await db.get(PDFFile, pdf_file_id)
             if not pdf_record:
@@ -55,6 +56,7 @@ async def process_pdf(pdf_file_id: int, filepath: str):
             await parser.parse(db)
 
             # Succès
+            success = True
             pdf_record.status = PDFStatus.DONE
             pdf_record.parsed_at = datetime.utcnow()
             pdf_record.temp_path = None
@@ -75,10 +77,13 @@ async def process_pdf(pdf_file_id: int, filepath: str):
             raise
 
         finally:
-            # TOUJOURS supprimer le fichier temp, succès ou erreur
-            try:
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-                    logger.info(f"Temporary file {filepath} removed")
-            except Exception as file_err:
-                logger.error(f"Failed to delete temporary file {filepath}: {str(file_err)}")
+            # Supprimer le fichier temp UNIQUEMENT en cas de succès
+            if success:
+                try:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                        logger.info(f"Temporary file {filepath} removed after successful parsing")
+                except Exception as file_err:
+                    logger.error(f"Failed to delete temporary file {filepath}: {str(file_err)}")
+            else:
+                logger.info(f"Keeping temporary file {filepath} on disk for retry/re-parse capability")
