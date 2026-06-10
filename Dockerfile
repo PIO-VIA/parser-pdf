@@ -5,6 +5,7 @@ WORKDIR /app
 # System dependencies for postgres adapter and parsing tools
 RUN apt-get update && apt-get install -y \
     libpq-dev gcc \
+    tesseract-ocr tesseract-ocr-fra poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
