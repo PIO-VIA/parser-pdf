@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from fastapi import status
 from unittest.mock import AsyncMock, patch, MagicMock
 import pytest
+from datetime import datetime
 from app.main import app
 from app.dependencies import get_db
 from app.models.user import User
@@ -11,6 +12,16 @@ client = TestClient(app)
 @pytest.fixture
 def mock_db():
     db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    
+    async def mock_refresh(obj):
+        if hasattr(obj, "id") and obj.id is None:
+            obj.id = 1
+        if hasattr(obj, "created_at") and obj.created_at is None:
+            obj.created_at = datetime.utcnow()
+            
+    db.refresh.side_effect = mock_refresh
     app.dependency_overrides[get_db] = lambda: db
     yield db
     app.dependency_overrides.clear()
@@ -43,7 +54,12 @@ def test_register_user_success(mock_db):
 
 def test_register_user_already_exists(mock_db):
     # Mock existing user
-    mock_user = User(email="test@example.com", hashed_password="hashed")
+    mock_user = User(
+        id=1,
+        email="test@example.com",
+        hashed_password="hashed",
+        created_at=datetime.utcnow()
+    )
     mock_result = MagicMock()
     mock_result.scalars.return_value.first.return_value = mock_user
     mock_db.execute.return_value = mock_result
@@ -72,7 +88,8 @@ def test_login_success(mock_verify, mock_db):
         hashed_password="hashed",
         full_name="Logged User",
         is_active=True,
-        is_superadmin=False
+        is_superadmin=False,
+        created_at=datetime.utcnow()
     )
     mock_result = MagicMock()
     mock_result.scalars.return_value.first.return_value = mock_user
@@ -93,13 +110,17 @@ def test_login_success(mock_verify, mock_db):
     assert "access_token" in data["data"]
     assert data["data"]["user"]["email"] == "test@example.com"
 
-def test_login_invalid_password(mock_db):
+@patch("app.services.auth_service.verify_password")
+def test_login_invalid_password(mock_verify, mock_db):
+    mock_verify.return_value = False
+    
     # Mock user query
     mock_user = User(
         id=1,
         email="test@example.com",
         hashed_password="hashed_wrong_password",
-        is_active=True
+        is_active=True,
+        created_at=datetime.utcnow()
     )
     mock_result = MagicMock()
     mock_result.scalars.return_value.first.return_value = mock_user

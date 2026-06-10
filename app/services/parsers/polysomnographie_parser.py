@@ -8,6 +8,13 @@ class PolysomnographieParser(BaseParser):
         if val is None:
             return None
         try:
+            if isinstance(val, re.Match):
+                group_val = None
+                for g in reversed(val.groups()):
+                    if g is not None and re.search(r"\d", g):
+                        group_val = g
+                        break
+                val = group_val if group_val is not None else val.group(0)
             val = str(val).replace(",", ".").strip()
             match = re.search(r"[-+]?\d*\.\d+|\d+", val)
             if match:
@@ -20,6 +27,13 @@ class PolysomnographieParser(BaseParser):
         if val is None:
             return None
         try:
+            if isinstance(val, re.Match):
+                group_val = None
+                for g in reversed(val.groups()):
+                    if g is not None and re.search(r"\d", g):
+                        group_val = g
+                        break
+                val = group_val if group_val is not None else val.group(0)
             val = str(val).strip()
             match = re.search(r"[-+]?\d+", val)
             if match:
@@ -36,8 +50,8 @@ class PolysomnographieParser(BaseParser):
 
         # 1. Patient Info
         # Nom / Prenom / DOB
-        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ\s-]+)", text, re.IGNORECASE)
-        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ\s-]+)", text, re.IGNORECASE)
+        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
+        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
         match_dob = re.search(r"(n[é|e]\s+le|date\s+de\s+naissance)\s*:\s*([\d/]+)", text, re.IGNORECASE)
         
         data["patient_nom"] = match_nom.group(1).strip() if match_nom else None
@@ -65,7 +79,7 @@ class PolysomnographieParser(BaseParser):
 
         # 3. Respiratory Indices
         data["iah"] = self.safe_float(re.search(r"iah\s*:\s*([\d,.]+)|index\s+apn[é|e]es\s+hypopn[é|e]es\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["ido"] = self.safe_float(re.search(r"ido\s*:\s*([\d,.]+)|index\s+de\s+d[é|e]saturation\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        data["ido"] = self.safe_float(re.search(r"ido\s*:\s*([\d,.]+)|index\s+de\s+d[é|e]saturations?\s*:\s*([\d,.]+)", text, re.IGNORECASE))
         data["charge_hypoxique"] = self.safe_float(re.search(r"charge\s+hypoxique\s*:\s*([\d,.]+)", text, re.IGNORECASE))
 
         # Obstructive, Central, Mixed, Dorsal, Non-Dorsal IAH
@@ -140,10 +154,10 @@ class PolysomnographieParser(BaseParser):
             data["severite"] = "Normal"
 
         # 6. Metadata / Header / Conclusion
-        match_dr = re.search(r"(dr|docteur)\s+([A-Za-zÀ-ÿ\s-]+)", text, re.IGNORECASE)
+        match_dr = re.search(r"(dr|docteur)\s+([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
         data["medecin"] = match_dr.group(2).strip() if match_dr else None
         
-        match_clinique = re.search(r"clinique\s+([A-Za-zÀ-ÿ\s-]+)", text, re.IGNORECASE)
+        match_clinique = re.search(r"clinique\s+([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
         data["clinique"] = match_clinique.group(1).strip() if match_clinique else None
 
         match_conclusion = re.search(r"conclusion\s*:\s*(.*)", text, re.IGNORECASE | re.DOTALL)

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -21,7 +22,7 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
         user = await auth_service.register_user(db, user_in)
         user_out = UserOut.from_orm(user)
         return success_response(
-            data={"user": user_out.dict()},
+            data={"user": jsonable_encoder(user_out)},
             message="Compte créé avec succès",
             code=status.HTTP_201_CREATED
         )
@@ -39,7 +40,7 @@ async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
         user = await auth_service.authenticate_user(db, credentials.email, credentials.password)
         token_data = await auth_service.generate_user_tokens(user)
         # Convert user to schema
-        token_data["user"] = UserOut.from_orm(user).dict()
+        token_data["user"] = jsonable_encoder(UserOut.from_orm(user))
         return success_response(
             data=token_data,
             message="Connexion réussie",
@@ -119,7 +120,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
     """
     user_out = UserOut.from_orm(current_user)
     return success_response(
-        data={"user": user_out.dict()},
+        data={"user": jsonable_encoder(user_out)},
         message="Profil récupéré",
         code=status.HTTP_200_OK
     )
@@ -133,7 +134,7 @@ async def update_me(update_in: UserUpdate, current_user: User = Depends(get_curr
         user = await auth_service.update_user_profile(db, current_user, update_in)
         user_out = UserOut.from_orm(user)
         return success_response(
-            data={"user": user_out.dict()},
+            data={"user": jsonable_encoder(user_out)},
             message="Profil mis à jour",
             code=status.HTTP_200_OK
         )

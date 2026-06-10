@@ -8,6 +8,13 @@ class PolygraphiePPCParser(BaseParser):
         if val is None:
             return None
         try:
+            if isinstance(val, re.Match):
+                group_val = None
+                for g in reversed(val.groups()):
+                    if g is not None and re.search(r"\d", g):
+                        group_val = g
+                        break
+                val = group_val if group_val is not None else val.group(0)
             val = str(val).replace(",", ".").strip()
             match = re.search(r"[-+]?\d*\.\d+|\d+", val)
             if match:
@@ -20,6 +27,13 @@ class PolygraphiePPCParser(BaseParser):
         if val is None:
             return None
         try:
+            if isinstance(val, re.Match):
+                group_val = None
+                for g in reversed(val.groups()):
+                    if g is not None and re.search(r"\d", g):
+                        group_val = g
+                        break
+                val = group_val if group_val is not None else val.group(0)
             val = str(val).strip()
             match = re.search(r"[-+]?\d+", val)
             if match:
@@ -34,8 +48,8 @@ class PolygraphiePPCParser(BaseParser):
         data = {}
 
         # 1. Patient Info
-        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ\s-]+)", text, re.IGNORECASE)
-        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ\s-]+)", text, re.IGNORECASE)
+        match_nom = re.search(r"nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
+        match_prenom = re.search(r"pr[é|e]nom\s*:\s*([A-Za-zÀ-ÿ \t-]+)", text, re.IGNORECASE)
         match_dob = re.search(r"(n[é|e]\s+le|date\s+de\s+naissance)\s*:\s*([\d/]+)", text, re.IGNORECASE)
         
         data["patient_nom"] = match_nom.group(1).strip() if match_nom else None
@@ -55,7 +69,7 @@ class PolygraphiePPCParser(BaseParser):
 
         # 3. Respiratory Indices (Residual)
         data["iah_residuel"] = self.safe_float(re.search(r"iah\s*(r[é|e]siduel)?\s*:\s*([\d,.]+)|index\s+apn[é|e]es\s+hypopn[é|e]es\s*:\s*([\d,.]+)", text, re.IGNORECASE))
-        data["ido"] = self.safe_float(re.search(r"ido\s*:\s*([\d,.]+)|index\s+de\s+d[é|e]saturation\s*:\s*([\d,.]+)", text, re.IGNORECASE))
+        data["ido"] = self.safe_float(re.search(r"ido\s*:\s*([\d,.]+)|index\s+de\s+d[é|e]saturations?\s*:\s*([\d,.]+)", text, re.IGNORECASE))
         data["iah_dorsal"] = self.safe_float(re.search(r"iah\s+dorsal\s*:\s*([\d,.]+)", text, re.IGNORECASE))
         data["iah_non_dorsal"] = self.safe_float(re.search(r"iah\s+non\s*[-|\s]*dorsal\s*:\s*([\d,.]+)", text, re.IGNORECASE))
 
