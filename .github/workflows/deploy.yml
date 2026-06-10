@@ -1,0 +1,90 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-fra poppler-utils libpq-dev gcc
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          SECRET_KEY: "testsecretkeytestsecretkeytestsecretkeytestsecretkey"
+          DB_USER: "test_user"
+          DB_PASSWORD: "test_password"
+          DB_HOST: "localhost"
+          DB_PORT: 5432
+          DB_NAME: "test_db"
+          SMTP_HOST: "smtp.example.com"
+          SMTP_PORT: 587
+          SMTP_USER: "test@example.com"
+          SMTP_PASSWORD: "smtp_password"
+          EMAIL_FROM: "test@example.com"
+          EMAIL_FROM_NAME: "Test Sender"
+          FRONTEND_URL: "http://localhost:3000"
+        run: |
+          pytest tests/ -v
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            # Check if project directory exists, if not clone it
+            if [ ! -d "${{ secrets.VPS_PROJECT_PATH }}" ]; then
+              echo "Project path not found, cloning repository..."
+              # Try cloning via SSH, fallback to HTTPS
+              git clone git@github.com:PIO-VIA/parser-pdf.git "${{ secrets.VPS_PROJECT_PATH }}" || \
+              git clone https://github.com/PIO-VIA/parser-pdf.git "${{ secrets.VPS_PROJECT_PATH }}"
+            fi
+            
+            cd ${{ secrets.VPS_PROJECT_PATH }} || { echo "Failed to navigate to project path"; exit 1; }
+            
+            # Pull latest changes from git
+            git pull origin main
+            
+            # Ensure .env file exists
+            if [ ! -f .env ]; then
+              cp .env.example .env
+              echo "Created .env from .env.example. Please configure production credentials."
+            fi
+            
+            # Rebuild and restart the containers
+            docker-compose down
+            docker-compose up -d --build
+            
+            # Wait for the API container to start up and be ready
+            echo "Waiting for container to be ready..."
+            sleep 10
+            
+            # Run Alembic migrations inside the container
+            docker-compose exec -T api alembic upgrade head
+            
+            echo "Deployment completed successfully!"
