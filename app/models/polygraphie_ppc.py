@@ -1,0 +1,30 @@
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text
+from app.database import Base
+
+class PolygraphiePPC(Base):
+    __tablename__ = "polygraphie_ppcs"
+    id = Column(Integer, primary_key=True, index=True)
+    patient_nom = Column(String, nullable=True)
+    patient_prenom = Column(String, nullable=True)
+    patient_dob = Column(String, nullable=True)
+    taille = Column(Float, nullable=True)
+    poids = Column(Float, nullable=True)
+    imc = Column(Float, nullable=True)
+    date_enregistrement = Column(String, nullable=True)
+    iah_residuel = Column(Float, nullable=True)
+    ido = Column(Float, nullable=True)
+    iah_dorsal = Column(Float, nullable=True)
+    iah_non_dorsal = Column(Float, nullable=True)
+    apnees_obstructives_nb = Column(Integer, nullable=True)
+    apnees_centrales_nb = Column(Integer, nullable=True)
+    hypopnees_nb = Column(Integer, nullable=True)
+    spo2_moyenne = Column(Float, nullable=True)
+    spo2_minimale = Column(Float, nullable=True)
+    duree_spo2_sous_90_pct = Column(Float, nullable=True)
+    pression_mediane = Column(Float, nullable=True)
+    pression_moyenne = Column(Float, nullable=True)
+    pression_p95 = Column(Float, nullable=True)
+    efficacite_sommeil_pct = Column(Float, nullable=True)
+    severite_residuelle = Column(String, nullable=True)
+    conclusion_texte = Column(Text, nullable=True)
+    pdf_file_id = Column(Integer, ForeignKey("pdf_files.id", ondelete="CASCADE"), nullable=False)
