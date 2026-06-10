@@ -46,7 +46,7 @@ async def list_efr_avancees(
         results = await db.execute(query)
         items = results.scalars().all()
 
-        items_out = [EFRAvanceeOut.from_orm(item).dict() for item in items]
+        items_out = [EFRAvanceeOut.model_validate(item).model_dump() for item in items]
         
         return success_response(
             data={"items": items_out, "total": total, "page": page, "limit": limit},
@@ -71,7 +71,7 @@ async def get_efr_avancee(
         if not item:
             return error_response(message="Rapport introuvable", code=status.HTTP_404_NOT_FOUND)
         return success_response(
-            data=EFRAvanceeOut.from_orm(item).dict(),
+            data=EFRAvanceeOut.model_validate(item).model_dump(),
             message="Rapport récupéré",
             code=status.HTTP_200_OK
         )

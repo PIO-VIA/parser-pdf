@@ -31,6 +31,7 @@ async def test_polysomnographie_parser():
     parser.extract_tables = MagicMock(return_value=[])
     
     db = AsyncMock()
+    db.add = MagicMock()
     record = await parser.parse(db)
     
     assert record.patient_nom == "DUPONT"
@@ -72,6 +73,7 @@ async def test_polygraphie_ppc_parser():
     parser.extract_all_text = MagicMock(return_value=mock_text)
     
     db = AsyncMock()
+    db.add = MagicMock()
     record = await parser.parse(db)
     
     assert record.patient_nom == "MARTIN"
@@ -120,6 +122,7 @@ async def test_efr_standard_parser():
     parser.extract_tables = MagicMock(return_value=mock_tables)
     
     db = AsyncMock()
+    db.add = MagicMock()
     record = await parser.parse(db)
     
     assert record.patient_nom == "LOPEZ"
@@ -170,6 +173,7 @@ async def test_efr_avancee_parser():
     parser.extract_tables = MagicMock(return_value=mock_tables)
     
     db = AsyncMock()
+    db.add = MagicMock()
     record = await parser.parse(db)
     
     assert record.patient_nom == "SMITH"

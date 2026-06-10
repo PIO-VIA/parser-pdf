@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 class EFRAvanceeBase(BaseModel):
@@ -44,5 +44,4 @@ class EFRAvanceeOut(EFRAvanceeBase):
     id: int
     pdf_file_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

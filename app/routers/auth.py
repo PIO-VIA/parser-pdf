@@ -20,7 +20,7 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     """
     try:
         user = await auth_service.register_user(db, user_in)
-        user_out = UserOut.from_orm(user)
+        user_out = UserOut.model_validate(user)
         return success_response(
             data={"user": jsonable_encoder(user_out)},
             message="Compte créé avec succès",
@@ -40,7 +40,7 @@ async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
         user = await auth_service.authenticate_user(db, credentials.email, credentials.password)
         token_data = await auth_service.generate_user_tokens(user)
         # Convert user to schema
-        token_data["user"] = jsonable_encoder(UserOut.from_orm(user))
+        token_data["user"] = jsonable_encoder(UserOut.model_validate(user))
         return success_response(
             data=token_data,
             message="Connexion réussie",

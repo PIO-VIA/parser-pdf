@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import Optional
 from app.models.pdf_file import PDFType, PDFStatus
@@ -15,8 +15,7 @@ class PDFFileOut(PDFFileBase):
     created_at: datetime
     parsed_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PDFUploadResponse(BaseModel):
     pdf_file_id: int
